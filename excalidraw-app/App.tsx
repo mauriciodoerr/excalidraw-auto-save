@@ -4,6 +4,7 @@ import {
   TTDDialogTrigger,
   CaptureUpdateAction,
   reconcileElements,
+  serializeAsJSON,
   useEditorInterface,
   ExcalidrawAPIProvider,
   useExcalidrawAPI,
@@ -101,6 +102,7 @@ import Collab, {
 } from "./collab/Collab";
 import { AppFooter } from "./components/AppFooter";
 import { AppMainMenu } from "./components/AppMainMenu";
+import { GitCommitDialog } from "./components/GitCommitDialog";
 import { AppWelcomeScreen } from "./components/AppWelcomeScreen";
 import {
   ExportToExcalidrawPlus,
@@ -404,6 +406,8 @@ const ExcalidrawWrapper = () => {
       trackEvent("load", "version", getVersion());
     }, VERSION_TIMEOUT);
   }, []);
+
+  const [gitDialogOpen, setGitDialogOpen] = useState(false);
 
   const [, setShareDialogState] = useAtom(shareDialogStateAtom);
   const [collabAPI] = useAtom(collabAPIAtom);
@@ -712,11 +716,48 @@ const ExcalidrawWrapper = () => {
     };
   }, [excalidrawAPI]);
 
+  // Auto-save to file: debounced 2 s after last change
+  const autoSaveToFile = useMemo(
+    () =>
+      debounce(
+        (
+          elements: readonly OrderedExcalidrawElement[],
+          appState: AppState,
+          files: BinaryFiles,
+        ) => {
+          const json = serializeAsJSON(elements, appState, files, "local");
+          fetch("/api/save", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ json }),
+          }).catch(() => {
+            // Silently ignore — the auto-save server may not be running
+          });
+        },
+        2000,
+      ),
+    [],
+  );
+
+  // Keyboard shortcut: Ctrl+Shift+S → open git commit dialog
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === "S") {
+        e.preventDefault();
+        setGitDialogOpen(true);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
   const onChange = (
     elements: readonly OrderedExcalidrawElement[],
     appState: AppState,
     files: BinaryFiles,
   ) => {
+    autoSaveToFile(elements, appState, files);
+
     if (collabAPI?.isCollaborating()) {
       collabAPI.syncElements(elements);
     }
@@ -1033,6 +1074,7 @@ const ExcalidrawWrapper = () => {
           isCollabEnabled={!isCollabDisabled}
           theme={appTheme}
           refresh={() => forceRefresh((prev) => !prev)}
+          onGitCommitOpen={() => setGitDialogOpen(true)}
         />
         <AppWelcomeScreen
           onCollabDialogOpen={onCollabDialogOpen}
@@ -1297,6 +1339,10 @@ const ExcalidrawWrapper = () => {
           />
         )}
       </Excalidraw>
+
+      {gitDialogOpen && (
+        <GitCommitDialog onClose={() => setGitDialogOpen(false)} />
+      )}
     </div>
   );
 };

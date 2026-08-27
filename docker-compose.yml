@@ -19,5 +19,26 @@ services:
       - ./yarn.lock:/opt/node_app/yarn.lock
       - notused:/opt/node_app/app/node_modules
 
+  # Sidecar: handles file persistence and git operations
+  auto-save-server:
+    build:
+      context: ./auto-save-server
+    container_name: excalidraw-auto-save
+    ports:
+      - "3001:3001"
+    restart: on-failure
+    environment:
+      - PORT=3001
+      # Path inside the container where the drawing is saved
+      - SAVE_PATH=/data/drawing.excalidraw
+      # Allow requests from the Excalidraw app
+      - CORS_ORIGIN=http://localhost:3000
+    volumes:
+      # Mount a local ./data directory for drawing persistence
+      - ./data:/data
+      # Mount a single SSH key for git push (read-only).
+      # Change the filename if your key is named differently (id_rsa, id_ecdsa, etc.):
+      - ~/.ssh/id_rsa:/root/.ssh/id_ed25519:ro
+
 volumes:
   notused:

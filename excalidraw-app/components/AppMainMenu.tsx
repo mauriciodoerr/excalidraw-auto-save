@@ -2,6 +2,7 @@ import {
   loginIcon,
   ExcalLogo,
   eyeIcon,
+  GithubIcon,
 } from "@excalidraw/excalidraw/components/icons";
 import { useI18n } from "@excalidraw/excalidraw/i18n";
 import { MainMenu } from "@excalidraw/excalidraw/index";
@@ -22,6 +23,7 @@ export const AppMainMenu: React.FC<{
   isCollabEnabled: boolean;
   theme: Theme | "system";
   refresh: () => void;
+  onGitCommitOpen: () => void;
 }> = React.memo((props) => {
   const { t } = useI18n();
   return (
@@ -30,6 +32,12 @@ export const AppMainMenu: React.FC<{
       <MainMenu.DefaultItems.SaveToActiveFile />
       <MainMenu.DefaultItems.Export />
       <MainMenu.DefaultItems.SaveAsImage />
+      <MainMenu.Item icon={GithubIcon} onSelect={props.onGitCommitOpen}>
+        Commit &amp; Push to Git
+        <span style={{ marginLeft: "auto", opacity: 0.5, fontSize: "0.8em" }}>
+          Ctrl+Shift+S
+        </span>
+      </MainMenu.Item>
       {props.isCollabEnabled && (
         <MainMenu.DefaultItems.LiveCollaborationTrigger
           isCollaborating={props.isCollaborating}

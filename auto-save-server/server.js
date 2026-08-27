@@ -10,26 +10,77 @@ const execFileAsync = promisify(execFile);
 const app = express();
 const PORT = process.env.PORT || 3001;
 const SAVE_PATH = process.env.SAVE_PATH || path.join(__dirname, "../data/drawing.excalidraw");
+const SAVE_DIR = path.dirname(SAVE_PATH);
 // Requests arrive via Nginx proxy (same-origin from browser's perspective),
 // so we allow any origin here. Restrict via firewall/network instead.
 app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 
 // Ensure the data directory exists
-fs.mkdirSync(path.dirname(SAVE_PATH), { recursive: true });
+fs.mkdirSync(SAVE_DIR, { recursive: true });
+
+// Migrate legacy drawing.excalidraw → default.excalidraw on first run
+const legacyPath = SAVE_PATH;
+const defaultPath = path.join(SAVE_DIR, "default.excalidraw");
+if (fs.existsSync(legacyPath) && !fs.existsSync(defaultPath)) {
+  fs.renameSync(legacyPath, defaultPath);
+  console.log("[auto-save] migrated drawing.excalidraw → default.excalidraw");
+}
+
+// Resolve a canvas ID to a safe file path (no directory traversal)
+function canvasFilePath(canvasId) {
+  const safe = path.basename(canvasId).replace(/[^a-zA-Z0-9_-]/g, "_");
+  return path.join(SAVE_DIR, `${safe}.excalidraw`);
+}
 
 
-// POST /api/save — write the drawing JSON to disk
+// POST /api/save — write a canvas JSON to its own file
 app.post("/api/save", async (req, res) => {
-  const { json } = req.body;
+  const { json, canvasId = "default" } = req.body;
   if (!json || typeof json !== "string") {
     return res.status(400).json({ ok: false, error: "Missing or invalid json field" });
   }
   try {
-    await fs.promises.writeFile(SAVE_PATH, json, "utf8");
+    await fs.promises.writeFile(canvasFilePath(canvasId), json, "utf8");
     res.json({ ok: true });
   } catch (err) {
     console.error("[auto-save] write error:", err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// GET /api/canvas/:id — read a canvas file
+app.get("/api/canvas/:id", async (req, res) => {
+  const filePath = canvasFilePath(req.params.id);
+  try {
+    const data = await fs.promises.readFile(filePath, "utf8");
+    res.setHeader("Content-Type", "application/json");
+    res.send(data);
+  } catch {
+    res.status(404).json({ ok: false, error: "Canvas not found" });
+  }
+});
+
+// DELETE /api/canvas/:id — delete a canvas file
+app.delete("/api/canvas/:id", async (req, res) => {
+  const filePath = canvasFilePath(req.params.id);
+  try {
+    await fs.promises.unlink(filePath);
+    res.json({ ok: true });
+  } catch {
+    res.json({ ok: true }); // Already gone — not an error
+  }
+});
+
+// GET /api/canvases — list all canvas files in the data dir
+app.get("/api/canvases", async (_req, res) => {
+  try {
+    const files = await fs.promises.readdir(SAVE_DIR);
+    const canvases = files
+      .filter((f) => f.endsWith(".excalidraw"))
+      .map((f) => ({ id: f.replace(/\.excalidraw$/, "") }));
+    res.json({ ok: true, canvases });
+  } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
 });

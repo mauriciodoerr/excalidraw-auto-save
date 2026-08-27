@@ -102,8 +102,18 @@ import Collab, {
 } from "./collab/Collab";
 import { AppFooter } from "./components/AppFooter";
 import { AppMainMenu } from "./components/AppMainMenu";
+import { CanvasTabBar } from "./components/CanvasTabBar";
 import { GitCommitDialog } from "./components/GitCommitDialog";
 import { AppWelcomeScreen } from "./components/AppWelcomeScreen";
+import {
+  addCanvas,
+  deleteCanvasOnServer,
+  listCanvases,
+  loadCanvasFromServer,
+  removeCanvas,
+  renameCanvas,
+  type CanvasMeta,
+} from "./canvasManager";
 import {
   ExportToExcalidrawPlus,
   exportToExcalidrawPlus,
@@ -408,6 +418,12 @@ const ExcalidrawWrapper = () => {
   }, []);
 
   const [gitDialogOpen, setGitDialogOpen] = useState(false);
+  const [canvases, setCanvases] = useState<CanvasMeta[]>(() => listCanvases());
+  const [activeCanvasId, setActiveCanvasId] = useState<string>(
+    () => listCanvases()[0]?.id ?? "default",
+  );
+  const activeCanvasIdRef = useRef(activeCanvasId);
+  activeCanvasIdRef.current = activeCanvasId;
 
   const [, setShareDialogState] = useAtom(shareDialogStateAtom);
   const [collabAPI] = useAtom(collabAPIAtom);
@@ -729,7 +745,7 @@ const ExcalidrawWrapper = () => {
           fetch("/api/save", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ json }),
+            body: JSON.stringify({ canvasId: activeCanvasIdRef.current, json }),
           }).catch(() => {
             // Silently ignore — the auto-save server may not be running
           });
@@ -737,6 +753,55 @@ const ExcalidrawWrapper = () => {
         2000,
       ),
     [],
+  );
+
+  const switchCanvas = useCallback(
+    async (newId: string) => {
+      if (newId === activeCanvasIdRef.current) return;
+      // Flush any pending save for the current canvas before switching
+      autoSaveToFile.flush();
+      setActiveCanvasId(newId);
+      const data = await loadCanvasFromServer(newId);
+      if (excalidrawAPI) {
+        // Strip undefined values — updateScene requires all passed keys to be defined
+        const loadedAppState = Object.fromEntries(
+          Object.entries(data?.appState ?? {}).filter(([, v]) => v !== undefined),
+        ) as Parameters<typeof excalidrawAPI.updateScene>[0]["appState"];
+        excalidrawAPI.updateScene({
+          elements: data?.elements ?? [],
+          appState: loadedAppState,
+          collaborators: new Map(),
+          captureUpdate: CaptureUpdateAction.NEVER,
+        });
+        excalidrawAPI.history.clear();
+      }
+    },
+    [excalidrawAPI, autoSaveToFile],
+  );
+
+  const handleAddCanvas = useCallback(() => {
+    const name = `Canvas ${canvases.length + 1}`;
+    const meta = addCanvas(name);
+    setCanvases(listCanvases());
+    switchCanvas(meta.id);
+  }, [canvases.length, switchCanvas]);
+
+  const handleRenameCanvas = useCallback((id: string, name: string) => {
+    renameCanvas(id, name);
+    setCanvases(listCanvases());
+  }, []);
+
+  const handleDeleteCanvas = useCallback(
+    (id: string) => {
+      removeCanvas(id);
+      deleteCanvasOnServer(id);
+      const remaining = listCanvases();
+      setCanvases(remaining);
+      if (id === activeCanvasIdRef.current) {
+        switchCanvas(remaining[0].id);
+      }
+    },
+    [switchCanvas],
   );
 
   // Keyboard shortcut: Ctrl+Shift+S → open git commit dialog
@@ -981,11 +1046,20 @@ const ExcalidrawWrapper = () => {
 
   return (
     <div
-      style={{ height: "100%" }}
+      style={{ height: "100%", display: "flex", flexDirection: "column" }}
       className={clsx("excalidraw-app", {
         "is-collaborating": isCollaborating,
       })}
     >
+      <CanvasTabBar
+        canvases={canvases}
+        activeId={activeCanvasId}
+        onSwitch={switchCanvas}
+        onAdd={handleAddCanvas}
+        onRename={handleRenameCanvas}
+        onDelete={handleDeleteCanvas}
+      />
+      <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
       <Excalidraw
         viewportStatusFrame={viewportStatusFrame}
         userToFollow={userToFollow}
@@ -1339,6 +1413,7 @@ const ExcalidrawWrapper = () => {
           />
         )}
       </Excalidraw>
+      </div>
 
       {gitDialogOpen && (
         <GitCommitDialog onClose={() => setGitDialogOpen(false)} />

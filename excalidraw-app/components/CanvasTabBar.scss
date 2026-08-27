@@ -1,0 +1,115 @@
+.canvas-tab-bar {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 4px 8px 0;
+  background: var(--island-bg-color, #f9f9f9);
+  border-bottom: 1px solid var(--default-border-color, #d0d0d0);
+  overflow-x: auto;
+  flex-shrink: 0;
+  scrollbar-width: thin;
+  z-index: 10;
+  position: relative;
+}
+
+.canvas-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border: 1px solid var(--default-border-color, #d0d0d0);
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: var(--button-hover-bg, rgba(0, 0, 0, 0.04));
+  cursor: pointer;
+  font-size: 0.82rem;
+  max-width: 160px;
+  min-width: 60px;
+  user-select: none;
+  white-space: nowrap;
+  color: var(--text-secondary-color, #6e6e6e);
+  transition: background 0.1s;
+
+  &:hover {
+    background: var(--popup-bg-color, #fff);
+    color: var(--text-primary-color, #1e1e1e);
+  }
+
+  &--active {
+    background: var(--popup-bg-color, #fff);
+    color: var(--text-primary-color, #1e1e1e);
+    border-color: var(--default-border-color, #d0d0d0);
+    position: relative;
+
+    // Overlay the bottom border to merge with canvas
+    &::after {
+      content: "";
+      position: absolute;
+      bottom: -1px;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: var(--popup-bg-color, #fff);
+    }
+  }
+}
+
+.canvas-tab__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.canvas-tab__rename-input {
+  width: 100px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 0.82rem;
+  color: var(--text-primary-color, #1e1e1e);
+  padding: 0;
+}
+
+.canvas-tab__delete {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-secondary-color, #6e6e6e);
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  opacity: 0.5;
+
+  &:hover {
+    background: var(--button-hover-bg, rgba(0, 0, 0, 0.08));
+    opacity: 1;
+  }
+}
+
+.canvas-tab-bar__add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 6px 6px 0 0;
+  background: none;
+  cursor: pointer;
+  font-size: 18px;
+  color: var(--text-secondary-color, #6e6e6e);
+  flex-shrink: 0;
+  align-self: flex-end;
+
+  &:hover {
+    background: var(--button-hover-bg, rgba(0, 0, 0, 0.06));
+    color: var(--text-primary-color, #1e1e1e);
+  }
+}

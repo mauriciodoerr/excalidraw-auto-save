@@ -62,3 +62,23 @@ export async function deleteCanvasOnServer(id: string): Promise<void> {
     () => {},
   );
 }
+
+export async function syncCanvasesWithServer(): Promise<CanvasMeta[]> {
+  const res = await fetch("/api/canvases");
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error);
+
+  const serverIds: string[] = data.canvases.map((c: { id: string }) => c.id);
+  const local = listCanvases();
+  const localById = new Map(local.map((c) => [c.id, c]));
+
+  // Preserve user-set names for existing canvases; use id as name for new ones
+  const merged: CanvasMeta[] = serverIds.map((id) =>
+    localById.get(id) ?? { id, name: id },
+  );
+
+  if (merged.length === 0) merged.push({ id: "default", name: "Drawing" });
+
+  persistList(merged);
+  return merged;
+}

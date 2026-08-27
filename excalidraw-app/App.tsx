@@ -112,6 +112,7 @@ import {
   loadCanvasFromServer,
   removeCanvas,
   renameCanvas,
+  syncCanvasesWithServer,
   type CanvasMeta,
 } from "./canvasManager";
 import {
@@ -804,6 +805,14 @@ const ExcalidrawWrapper = () => {
     [switchCanvas],
   );
 
+  const handlePulled = useCallback(async () => {
+    autoSaveToFile.flush();
+    const updated = await syncCanvasesWithServer();
+    setCanvases(updated);
+    const stillExists = updated.some((c) => c.id === activeCanvasIdRef.current);
+    await switchCanvas(stillExists ? activeCanvasIdRef.current : updated[0].id);
+  }, [autoSaveToFile, switchCanvas]);
+
   // Keyboard shortcut: Ctrl+Shift+S → open git commit dialog
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -1416,7 +1425,10 @@ const ExcalidrawWrapper = () => {
       </div>
 
       {gitDialogOpen && (
-        <GitCommitDialog onClose={() => setGitDialogOpen(false)} />
+        <GitCommitDialog
+          onClose={() => setGitDialogOpen(false)}
+          onPulled={handlePulled}
+        />
       )}
     </div>
   );

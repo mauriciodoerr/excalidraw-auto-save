@@ -36,9 +36,9 @@ services:
     volumes:
       # Mount a local ./data directory for drawing persistence
       - ./data:/data
-      # Mount a single SSH key for git push (read-only).
-      # Change the filename if your key is named differently (id_rsa, id_ecdsa, etc.):
-      - ~/.ssh/id_rsa:/root/.ssh/id_ed25519:ro
+      # Mount the whole ~/.ssh directory (read-only).
+      # The key filename is configured via the git dialog in the app.
+      - ~/.ssh:/root/.ssh:ro
 
 volumes:
   notused:

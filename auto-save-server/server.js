@@ -19,6 +19,23 @@ app.use(express.json({ limit: "50mb" }));
 // Ensure the data directory exists
 fs.mkdirSync(SAVE_DIR, { recursive: true });
 
+// Keep .config.json out of the data git repo
+function ensureDataGitignore() {
+  const gitignorePath = path.join(SAVE_DIR, ".gitignore");
+  try {
+    const existing = fs.existsSync(gitignorePath)
+      ? fs.readFileSync(gitignorePath, "utf8")
+      : "";
+    if (!existing.includes(".config.json")) {
+      fs.appendFileSync(gitignorePath, ".config.json\n");
+    }
+  } catch (err) {
+    console.warn("[auto-save] could not write data .gitignore:", err.message);
+  }
+}
+
+ensureDataGitignore();
+
 // Migrate legacy drawing.excalidraw → default.excalidraw on first run
 const legacyPath = SAVE_PATH;
 const defaultPath = path.join(SAVE_DIR, "default.excalidraw");
@@ -85,29 +102,56 @@ app.get("/api/canvases", async (_req, res) => {
   }
 });
 
-// Write a minimal SSH config pointing at the single mounted key.
-// /tmp is always writable; the mounted ~/.ssh volume is read-only.
-const SSH_KEY = "/root/.ssh/id_ed25519";
-const PATCHED_SSH_CONFIG = "/tmp/ssh_config_patched";
-let GIT_SSH_COMMAND = "ssh";
+// Persistent config stored in the data volume alongside the canvas files.
+const CONFIG_PATH = path.join(SAVE_DIR, ".config.json");
 
-try {
-  if (fs.existsSync(SSH_KEY)) {
-    const config = [
-      "Host *",
-      `  IdentityFile ${SSH_KEY}`,
-      "  IdentitiesOnly yes",
-      "  StrictHostKeyChecking accept-new",
-    ].join("\n") + "\n";
-    fs.writeFileSync(PATCHED_SSH_CONFIG, config, { mode: 0o600 });
-    GIT_SSH_COMMAND = `ssh -F ${PATCHED_SSH_CONFIG}`;
-    console.log("[auto-save] SSH configured with key:", SSH_KEY);
-  } else {
-    console.warn("[auto-save] no SSH key found at", SSH_KEY, "— git push will likely fail");
+function readConfig() {
+  try {
+    return JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+  } catch {
+    return {};
   }
-} catch (err) {
-  console.warn("[auto-save] could not write SSH config:", err.message);
 }
+
+function writeConfig(data) {
+  const current = readConfig();
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify({ ...current, ...data }, null, 2));
+}
+
+// Build a fresh SSH config at commit time so key changes take effect immediately
+// without restarting the container.
+const PATCHED_SSH_CONFIG = "/tmp/ssh_config_patched";
+
+function buildSshCommand() {
+  const { sshKeyName = "id_ed25519" } = readConfig();
+  const keyPath = `/root/.ssh/${path.basename(sshKeyName)}`;
+  if (!fs.existsSync(keyPath)) {
+    console.warn("[auto-save] SSH key not found:", keyPath, "— git push will likely fail");
+    return "ssh";
+  }
+  const config = [
+    "Host *",
+    `  IdentityFile ${keyPath}`,
+    "  IdentitiesOnly yes",
+    "  StrictHostKeyChecking accept-new",
+  ].join("\n") + "\n";
+  fs.writeFileSync(PATCHED_SSH_CONFIG, config, { mode: 0o600 });
+  return `ssh -F ${PATCHED_SSH_CONFIG}`;
+}
+
+// GET /api/config — return current server config
+app.get("/api/config", (_req, res) => {
+  res.json({ ok: true, config: readConfig() });
+});
+
+// POST /api/config — update one or more config fields
+app.post("/api/config", (req, res) => {
+  const { sshKeyName } = req.body;
+  if (sshKeyName !== undefined) {
+    writeConfig({ sshKeyName });
+  }
+  res.json({ ok: true });
+});
 
 // POST /api/git/commit — git add + commit + push
 app.post("/api/git/commit", async (req, res) => {
@@ -128,7 +172,7 @@ app.post("/api/git/commit", async (req, res) => {
     GIT_AUTHOR_EMAIL: email,
     GIT_COMMITTER_NAME: name,
     GIT_COMMITTER_EMAIL: email,
-    GIT_SSH_COMMAND,
+    GIT_SSH_COMMAND: buildSshCommand(),
   };
 
   try {
@@ -171,6 +215,22 @@ app.post("/api/git/commit", async (req, res) => {
   }
 });
 
+// POST /api/git/pull — git pull from remote
+app.post("/api/git/pull", async (_req, res) => {
+  const cwd = path.dirname(SAVE_PATH);
+  try {
+    const { stdout, stderr } = await execFileAsync(
+      "git", ["pull"],
+      { cwd, env: { ...process.env, GIT_SSH_COMMAND: buildSshCommand() } },
+    );
+    res.json({ ok: true, output: [stdout, stderr].filter(Boolean).join("\n") || "Already up to date." });
+  } catch (err) {
+    const detail = err.stderr || err.stdout || err.message;
+    console.error("[auto-save] git pull error:", detail);
+    res.status(500).json({ ok: false, error: detail });
+  }
+});
+
 // GET /api/git/status — check if the data dir is a git repo with a remote
 app.get("/api/git/status", async (_req, res) => {
   const cwd = path.dirname(SAVE_PATH);
@@ -185,7 +245,7 @@ app.get("/api/git/status", async (_req, res) => {
 
 // POST /api/git/init — git init + git remote add origin <url>
 app.post("/api/git/init", async (req, res) => {
-  const { remoteUrl } = req.body;
+  const { remoteUrl, freshStart = false } = req.body;
   if (!remoteUrl || typeof remoteUrl !== "string") {
     return res.status(400).json({ ok: false, error: "Missing remoteUrl" });
   }
@@ -194,6 +254,15 @@ app.post("/api/git/init", async (req, res) => {
   const output = [];
 
   try {
+    if (freshStart) {
+      // Wipe git history; canvas files are untouched
+      const gitDir = path.join(cwd, ".git");
+      if (fs.existsSync(gitDir)) {
+        fs.rmSync(gitDir, { recursive: true, force: true });
+        output.push("Removed existing git history.");
+      }
+    }
+
     // Init only if not already a repo
     const isRepo = await execFileAsync("git", ["rev-parse", "--is-inside-work-tree"], { cwd })
       .then(() => true)
@@ -203,6 +272,8 @@ app.post("/api/git/init", async (req, res) => {
       const init = await execFileAsync("git", ["init"], { cwd });
       output.push(init.stdout, init.stderr);
     }
+
+    ensureDataGitignore();
 
     // Remove existing remote if present, then re-add
     await execFileAsync("git", ["remote", "remove", "origin"], { cwd }).catch(() => {});

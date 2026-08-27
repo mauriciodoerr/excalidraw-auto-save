@@ -86,6 +86,48 @@
   margin: 0;
   font-size: 0.83rem;
   color: var(--text-secondary-color, #6e6e6e);
+
+  &--small {
+    font-size: 0.75rem;
+    opacity: 0.8;
+  }
+}
+
+.git-commit-dialog__ssh-key {
+  opacity: 0.7;
+}
+
+.git-commit-dialog__checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-primary-color, #1e1e1e);
+  cursor: pointer;
+
+  input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+}
+
+.git-commit-dialog__warning {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8rem;
+  background: #fff8ec;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+  border-radius: 4px;
+
+  code {
+    font-family: monospace;
+    background: rgba(0, 0, 0, 0.06);
+    padding: 0 3px;
+    border-radius: 3px;
+  }
 }
 
 
@@ -155,6 +197,16 @@
 
     &:hover:not(:disabled) {
       background: var(--button-hover-bg, rgba(0, 0, 0, 0.05));
+    }
+  }
+
+  &--secondary {
+    background: transparent;
+    border-color: var(--color-primary, #6965db);
+    color: var(--color-primary, #6965db);
+
+    &:hover:not(:disabled) {
+      background: rgba(105, 101, 219, 0.08);
     }
   }
 
